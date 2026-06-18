@@ -151,8 +151,8 @@ async function loadData(){
 
   allCams = lines.slice(1).map(line => {
     const parts = line.split(",");
-    const id = parts[0]?.trim();
     const rawName = parts[2]?.trim();
+    const id = rawName.match(/^\d+/)?.[0];
     const x = parseFloat(parts[3]);
     const y = parseFloat(parts[4]);
 
