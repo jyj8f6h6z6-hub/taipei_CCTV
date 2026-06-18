@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>台北市道路 CCTV</title>
+  <meta name="description" content="台北市道路 CCTV，依12行政區分類，點選開啟官方即時影像頁。" />
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#fff; --text:#1f2937; --muted:#6b7280;
+      --line:#e5e7eb; --accent:#2563eb; --accent2:#eff6ff;
+      --shadow:0 8px 24px rgba(15,23,42,.08);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",Arial,sans-serif;background:var(--bg);color:var(--text)}
+    header{position:sticky;top:0;z-index:10;background:rgba(246,247,251,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+    .wrap{max-width:1100px;margin:auto;padding:18px}
+    h1{font-size:24px;margin:0 0 8px}
+    .sub{color:var(--muted);font-size:14px;line-height:1.5}
+    .controls{display:grid;grid-template-columns:1fr 170px 130px;gap:10px;margin-top:14px}
+    input,select,button{font-size:16px;border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}
+    button{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700;cursor:pointer}
+    button.secondary{background:#fff;color:var(--accent)}
+    main{max-width:1100px;margin:auto;padding:18px}
+    .status{margin:0 0 14px;color:var(--muted);font-size:14px}
+    .district{background:var(--card);border-radius:18px;box-shadow:var(--shadow);margin:14px 0;overflow:hidden;border:1px solid var(--line)}
+    .district summary{cursor:pointer;list-style:none;padding:16px 18px;font-weight:800;display:flex;justify-content:space-between;align-items:center}
+    .district summary::-webkit-details-marker{display:none}
+    .badge{background:var(--accent2);color:var(--accent);border-radius:999px;padding:4px 10px;font-size:13px}
+    .list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 16px 16px}
+    .cam{display:block;text-decoration:none;color:var(--text);border:1px solid var(--line);border-radius:14px;padding:12px;background:#fff}
+    .cam:hover{border-color:#93c5fd;background:#f8fbff}
+    .cam-title{font-weight:750;line-height:1.35}
+    .cam-meta{margin-top:6px;color:var(--muted);font-size:12px}
+    .empty{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;color:var(--muted)}
+    footer{max-width:1100px;margin:30px auto;padding:18px;color:var(--muted);font-size:12px;line-height:1.6}
+    @media(max-width:720px){
+      .controls{grid-template-columns:1fr}
+      .list{grid-template-columns:1fr}
+      h1{font-size:22px}
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>台北市道路 CCTV</h1>
+    <div class="sub">
+      依 12 行政區分類。資料來源：臺北市資料大平臺「臺北市CCTV設施」；點選攝影機會開啟交工處官方播放頁。
+    </div>
+    <div class="controls">
+      <input id="q" placeholder="搜尋位置，例如：忠孝、敦化、建國快" />
+      <select id="districtFilter">
+        <option value="全部">全部行政區</option>
+      </select>
+      <button id="reload">重新載入</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <p id="status" class="status">載入中……</p>
+  <div id="content"></div>
+</main>
+
+<footer>
+  <div>說明：本頁不儲存、不轉播影像，只依官方公開資料建立清單，連結至 https://hls.bote.gov.taipei/live/index.html?id=流水號。</div>
+  <div>若官方資料集欄位或播放網址規則變更，請調整 DATA_URL 或 playerUrl()。</div>
+</footer>
+
+<script>
+const DATA_URL = "https://data.taipei/api/frontstage/tpeod/dataset/resource.download?rid=d317a3c4-ff08-48af-894e-31dfb5155de3";
+
+const DISTRICTS = ["中正區","大同區","中山區","松山區","大安區","萬華區","信義區","士林區","北投區","內湖區","南港區","文山區"];
+
+/*
+  台北市12行政區粗略邊界框，用來把 CCTV 座標分區。
+  優點：單一HTML即可執行，不需額外載入地圖/邊界檔。
+  若遇到行政區交界，可能需人工微調；程式會保留「未判定」分類。
+*/
+const BOXES = [
+  {d:"北投區", minX:121.45, maxX:121.62, minY:25.10, maxY:25.23},
+  {d:"士林區", minX:121.47, maxX:121.67, minY:25.07, maxY:25.16},
+  {d:"內湖區", minX:121.55, maxX:121.68, minY:25.04, maxY:25.10},
+  {d:"南港區", minX:121.57, maxX:121.70, minY:25.00, maxY:25.08},
+  {d:"文山區", minX:121.51, maxX:121.64, minY:24.95, maxY:25.03},
+  {d:"萬華區", minX:121.47, maxX:121.52, minY:25.015, maxY:25.055},
+  {d:"中正區", minX:121.49, maxX:121.54, minY:25.015, maxY:25.055},
+  {d:"大同區", minX:121.49, maxX:121.53, minY:25.045, maxY:25.085},
+  {d:"中山區", minX:121.51, maxX:121.57, minY:25.045, maxY:25.095},
+  {d:"松山區", minX:121.54, maxX:121.59, minY:25.035, maxY:25.075},
+  {d:"大安區", minX:121.51, maxX:121.57, minY:25.005, maxY:25.055},
+  {d:"信義區", minX:121.55, maxX:121.61, minY:25.005, maxY:25.055}
+];
+
+let allCams = [];
+
+function parseCSV(text){
+  const rows = [];
+  let row = [], cell = "", q = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i], n = text[i+1];
+    if(c === '"' && q && n === '"'){ cell += '"'; i++; }
+    else if(c === '"'){ q = !q; }
+    else if(c === "," && !q){ row.push(cell); cell = ""; }
+    else if((c === "\n" || c === "\r") && !q){
+      if(cell || row.length){ row.push(cell); rows.push(row); row = []; cell = ""; }
+      if(c === "\r" && n === "\n") i++;
+    } else cell += c;
+  }
+  if(cell || row.length){ row.push(cell); rows.push(row); }
+  return rows;
+}
+
+function normalizeHeader(s){ return String(s || "").replace(/\s/g,"").toLowerCase(); }
+
+function pick(obj, names){
+  const keys = Object.keys(obj);
+  for(const name of names){
+    const found = keys.find(k => normalizeHeader(k).includes(normalizeHeader(name)));
+    if(found) return obj[found];
+  }
+  return "";
+}
+
+function cleanName(raw){
+  let s = String(raw || "").trim();
+  // 例：255-忠孝東路-敦化南路口 → 忠孝東路-敦化南路口
+  s = s.replace(/^\s*\d+\s*[-_－—]\s*/, "");
+  return s || "未命名 CCTV";
+}
+
+function districtByCoord(x, y){
+  const hit = BOXES.find(b => x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY);
+  return hit ? hit.d : "未判定";
+}
+
+function playerUrl(id){
+  return `https://hls.bote.gov.taipei/live/index.html?id=${encodeURIComponent(id)}`;
+}
+
+async function loadData(){
+  document.getElementById("status").textContent = "載入官方資料中……";
+  const res = await fetch(DATA_URL, {cache:"no-store"});
+  if(!res.ok) throw new Error("資料下載失敗：" + res.status);
+  const buf = await res.arrayBuffer();
+  const text = new TextDecoder("utf-8").decode(buf);
+  const csv = parseCSV(text).filter(r => r.length >= 3);
+  const header = csv.shift();
+  const records = csv.map(r => Object.fromEntries(header.map((h,i)=>[h, r[i] ?? ""])));
+
+  allCams = records.map(o => {
+    const id = pick(o, ["流水號", "id"]);
+    const rawName = pick(o, ["攝影機編號位置", "位置"]);
+    const x = parseFloat(pick(o, ["WGSX", "經度"]));
+    const y = parseFloat(pick(o, ["WGSY", "緯度"]));
+    return {
+      id,
+      name: cleanName(rawName),
+      rawName,
+      x, y,
+      district: districtByCoord(x, y),
+      url: playerUrl(id)
+    };
+  }).filter(c => c.id && c.name);
+
+  buildDistrictOptions();
+  render();
+}
+
+function buildDistrictOptions(){
+  const sel = document.getElementById("districtFilter");
+  const current = sel.value;
+  sel.innerHTML = `<option value="全部">全部行政區</option>` +
+    [...DISTRICTS, "未判定"].map(d => `<option value="${d}">${d}</option>`).join("");
+  sel.value = current || "全部";
+}
+
+function render(){
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const df = document.getElementById("districtFilter").value;
+
+  let cams = allCams.filter(c => {
+    const okQ = !q || (c.name + c.rawName + c.id + c.district).toLowerCase().includes(q);
+    const okD = df === "全部" || c.district === df;
+    return okQ && okD;
+  });
+
+  const order = [...DISTRICTS, "未判定"];
+  const grouped = Object.fromEntries(order.map(d => [d, []]));
+  cams.forEach(c => (grouped[c.district] ||= []).push(c));
+
+  document.getElementById("status").textContent =
+    `共 ${allCams.length} 支 CCTV；目前顯示 ${cams.length} 支。`;
+
+  const html = order
+    .filter(d => grouped[d] && grouped[d].length)
+    .map(d => {
+      const items = grouped[d]
+        .sort((a,b)=>a.name.localeCompare(b.name,"zh-Hant"))
+        .map(c => `
+          <a class="cam" href="${c.url}" target="_blank" rel="noopener">
+            <div class="cam-title">${escapeHtml(c.name)}</div>
+            <div class="cam-meta">ID ${escapeHtml(c.id)}｜${Number.isFinite(c.x)?c.x.toFixed(6):""}, ${Number.isFinite(c.y)?c.y.toFixed(6):""}</div>
+          </a>
+        `).join("");
+      return `
+        <details class="district" open>
+          <summary>${d}<span class="badge">${grouped[d].length} 支</span></summary>
+          <div class="list">${items}</div>
+        </details>
+      `;
+    }).join("");
+
+  document.getElementById("content").innerHTML = html || `<div class="empty">找不到符合條件的 CCTV。</div>`;
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+}
+
+document.getElementById("q").addEventListener("input", render);
+document.getElementById("districtFilter").addEventListener("change", render);
+document.getElementById("reload").addEventListener("click", loadData);
+
+loadData().catch(err => {
+  document.getElementById("status").textContent = "載入失敗。";
+  document.getElementById("content").innerHTML =
+    `<div class="empty">無法讀取官方資料。可能是 CORS、網路或官方下載連結變更。<br>${escapeHtml(err.message)}</div>`;
+});
+</script>
+</body>
+</html>
