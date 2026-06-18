@@ -140,29 +140,31 @@ function playerUrl(id){
 }
 
 async function loadData(){
-  document.getElementById("status").textContent = "載入官方資料中……";
-  const res = await fetch(DATA_URL, {cache:"no-store"});
-  if(!res.ok) throw new Error("資料下載失敗：" + res.status);
-  const buf = await res.arrayBuffer();
-  const text = new TextDecoder("utf-8").decode(buf);
-  const csv = parseCSV(text).filter(r => r.length >= 3);
-  const header = csv.shift();
-  const records = csv.map(r => Object.fromEntries(header.map((h,i)=>[h, r[i] ?? ""])));
+  document.getElementById("status").textContent = "載入 cctv.csv 中……";
 
-  allCams = records.map(o => {
-    const id = pick(o, ["流水號", "id"]);
-    const rawName = pick(o, ["攝影機編號位置", "攝影機編號", "位置"]);
-    const x = parseFloat(pick(o, ["WGSX", "經度"]));
-    const y = parseFloat(pick(o, ["WGSY", "緯度"]));
+  const res = await fetch("./cctv.csv", {cache:"no-store"});
+  if(!res.ok) throw new Error("資料下載失敗：" + res.status);
+
+  const text = await res.text();
+  const lines = text.trim().split(/\r?\n/);
+
+  allCams = lines.slice(1).map(line => {
+    const parts = line.split(",");
+    const id = parts[0]?.trim();
+    const rawName = parts[2]?.trim();
+    const x = parseFloat(parts[3]);
+    const y = parseFloat(parts[4]);
+
     return {
       id,
       name: cleanName(rawName),
       rawName,
-      x, y,
+      x,
+      y,
       district: districtByCoord(x, y),
       url: playerUrl(id)
     };
-  }).filter(c => c.id && c.name);
+  }).filter(c => c.id && c.rawName);
 
   buildDistrictOptions();
   render();
