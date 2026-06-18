@@ -151,7 +151,7 @@ async function loadData(){
 
   allCams = records.map(o => {
     const id = pick(o, ["流水號", "id"]);
-    const rawName = pick(o, ["攝影機編號位置", "位置"]);
+    const rawName = pick(o, ["攝影機編號位置", "攝影機編號", "位置"]);
     const x = parseFloat(pick(o, ["WGSX", "經度"]));
     const y = parseFloat(pick(o, ["WGSY", "緯度"]));
     return {
